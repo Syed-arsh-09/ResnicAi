@@ -1,0 +1,9 @@
+crewai
+crewai-tools
+streamlit
+python-dotenv
+langchain-openai
+langchain-google-genai
+langchain-community
+jupyter
+pytest
