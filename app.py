@@ -5,9 +5,10 @@ import threading
 from pathlib import Path
 from dotenv import load_dotenv
 import streamlit as st
+import queue
 
 # Import refactored logic
-from src.utils import ThreadSafeStdoutRedirector, clean_ansi, load_agent_prompts
+from src.utils import ThreadSafeStreamRedirector, set_log_callback, clear_log_callback, clean_ansi, load_agent_prompts
 from src.tools import setup_tools
 from src.crew import run_crew_job
 
@@ -22,10 +23,15 @@ except Exception as e:
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path, override=True)
 
+# Force enable CrewAI tracing to provide full transparency
+os.environ["CREWAI_TRACING_ENABLED"] = "true"
+
 # Install thread-safe redirector once
 if 'redirector_installed' not in st.session_state:
-    if not isinstance(sys.stdout, ThreadSafeStdoutRedirector):
-        sys.stdout = ThreadSafeStdoutRedirector(sys.stdout)
+    if not isinstance(sys.stdout, ThreadSafeStreamRedirector):
+        sys.stdout = ThreadSafeStreamRedirector(sys.stdout)
+    if not isinstance(sys.stderr, ThreadSafeStreamRedirector):
+        sys.stderr = ThreadSafeStreamRedirector(sys.stderr)
     st.session_state.redirector_installed = True
 
 # Setup layout & UI elements
@@ -128,7 +134,13 @@ with tab_raw:
 
 with tab_report:
     if st.session_state.final_report:
-        st.markdown(st.session_state.final_report)
+        def stream_data(text):
+            for word in text.split(" "):
+                yield word + " "
+                time.sleep(0.02)
+        
+        st.write_stream(stream_data(st.session_state.final_report))
+            
         reports_dir = Path("reports")
         reports_dir.mkdir(exist_ok=True)
         filename = f"report_{int(time.time())}.md"
@@ -174,6 +186,8 @@ if start_btn:
 
     result_container = {"raw": "", "final": "", "error": None}
 
+    log_queue = queue.Queue()
+
     def run_crew_wrapper():
         try:
             raw, final = run_crew_job(research_topic, agent_prompts, llm, tools)
@@ -184,18 +198,40 @@ if start_btn:
 
     def append_log(text):
         clean_text = clean_ansi(text)
-        st.session_state.live_logs += clean_text
-        log_area.code(st.session_state.live_logs)
+        if clean_text:
+            log_queue.put(clean_text)
 
     crew_thread = threading.Thread(target=run_crew_wrapper)
-    sys.stdout.register(crew_thread.ident, append_log)
+    set_log_callback(append_log)
     
     with st.spinner("CrewAI workflow executing... Please watch the 'Agent Thinking Process' tab for live details."):
         crew_thread.start()
         while crew_thread.is_alive():
+            new_logs = ""
+            while not log_queue.empty():
+                try:
+                    new_logs += log_queue.get_nowait()
+                except queue.Empty:
+                    break
+            
+            if new_logs:
+                st.session_state.live_logs += new_logs
+                log_area.code(st.session_state.live_logs)
+                
             time.sleep(0.5)
             
-    sys.stdout.unregister(crew_thread.ident)
+    clear_log_callback()
+    
+    # Drain any remaining logs
+    new_logs = ""
+    while not log_queue.empty():
+        try:
+            new_logs += log_queue.get_nowait()
+        except queue.Empty:
+            break
+    if new_logs:
+        st.session_state.live_logs += new_logs
+        log_area.code(st.session_state.live_logs)
 
     if result_container.get("error"):
         st.error(f"Workflow failed: {result_container['error']}")
