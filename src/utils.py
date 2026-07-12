@@ -4,30 +4,34 @@ import sys
 import threading
 import streamlit as st
 
-class ThreadSafeStdoutRedirector:
-    def __init__(self, original_stdout):
-        self.original_stdout = original_stdout
-        self.redirects = {} # thread_id -> callback
-        self.lock = threading.Lock()
+ACTIVE_CALLBACK = None
 
-    def register(self, thread_id, callback):
-        with self.lock:
-            self.redirects[thread_id] = callback
-
-    def unregister(self, thread_id):
-        with self.lock:
-            self.redirects.pop(thread_id, None)
+class ThreadSafeStreamRedirector:
+    def __init__(self, original_stream):
+        self.original_stream = original_stream
 
     def write(self, data):
-        tid = threading.get_ident()
-        with self.lock:
-            callback = self.redirects.get(tid)
-        if callback:
-            callback(data)
-        self.original_stdout.write(data)
+        global ACTIVE_CALLBACK
+        if ACTIVE_CALLBACK:
+            try:
+                ACTIVE_CALLBACK(data)
+            except Exception:
+                pass
+        try:
+            self.original_stream.write(data)
+        except UnicodeEncodeError:
+            self.original_stream.write(data.encode('ascii', 'replace').decode('ascii'))
 
     def flush(self):
-        self.original_stdout.flush()
+        self.original_stream.flush()
+
+def set_log_callback(callback):
+    global ACTIVE_CALLBACK
+    ACTIVE_CALLBACK = callback
+
+def clear_log_callback():
+    global ACTIVE_CALLBACK
+    ACTIVE_CALLBACK = None
 
 def clean_ansi(text):
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')

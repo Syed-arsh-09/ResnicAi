@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import threading
+import re
 from pathlib import Path
 from dotenv import load_dotenv
 import streamlit as st
@@ -63,6 +64,26 @@ st.markdown("""
     .stTabs [data-baseweb="tab"] { background-color: transparent; border-radius: 4px 4px 0px 0px; padding: 10px 16px; font-weight: 600; color: #94A3B8; transition: all 0.2s; }
     .stTabs [data-baseweb="tab"]:hover { color: #F8FAFC; background-color: rgba(255, 255, 255, 0.03); }
     .stTabs [data-baseweb="tab"][aria-selected="true"] { color: #38BDF8; border-bottom-color: #38BDF8; }
+    
+    /* New Custom UI for Agent Workflow */
+    .workflow-container { display: flex; flex-direction: column; gap: 16px; margin-top: 10px; }
+    .topic-header { display: inline-flex; align-items: center; gap: 8px; background-color: rgba(255, 255, 255, 0.05); padding: 6px 12px; border-radius: 20px; font-size: 0.9rem; font-weight: 500; color: #CBD5E1; margin-bottom: 8px; width: fit-content; border: 1px solid rgba(255, 255, 255, 0.1); }
+    .agent-card { background-color: #27272A; border: 1px solid #3F3F46; border-radius: 12px; padding: 16px; color: #E2E8F0; }
+    .agent-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .agent-icon-wrapper { width: 32px; height: 32px; border-radius: 8px; background-color: #F8FAFC; color: #0F172A; display: flex; justify-content: center; align-items: center; padding: 6px; }
+    .agent-title { font-weight: 600; font-size: 1.1rem; flex-grow: 1; }
+    .status-badge { font-size: 0.75rem; font-weight: 600; padding: 4px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .badge-queued { background-color: rgba(255, 255, 255, 0.1); color: #94A3B8; }
+    .badge-running { background-color: rgba(56, 189, 248, 0.2); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.4); animation: pulse 2s infinite; }
+    .badge-done { background-color: rgba(34, 197, 94, 0.2); color: #4ADE80; border: 1px solid rgba(34, 197, 94, 0.4); }
+    .agent-steps { margin: 0; padding-left: 24px; font-size: 0.9rem; color: #94A3B8; line-height: 1.6; list-style-type: disc; }
+    .agent-steps li { margin-bottom: 4px; }
+    .agent-steps b { color: #CBD5E1; font-weight: 600; }
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.4); }
+        70% { box-shadow: 0 0 0 6px rgba(56, 189, 248, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -112,13 +133,143 @@ if "final_report" not in st.session_state:
     st.session_state.final_report = ""
 if "live_logs" not in st.session_state:
     st.session_state.live_logs = ""
+if "log_line_buffer" not in st.session_state:
+    st.session_state.log_line_buffer = ""
+    
+# Structured UI states
+def init_agent_states():
+    return {
+        "Senior Researcher": {"status": "queued", "steps": []},
+        "Technical Copywriter & Synthesizer": {"status": "queued", "steps": []},
+        "Quality Assurance & Fact-Checker": {"status": "queued", "steps": []}
+    }
+
+if "agent_states" not in st.session_state:
+    st.session_state.agent_states = init_agent_states()
+if "current_agent" not in st.session_state:
+    st.session_state.current_agent = None
+if "current_label" not in st.session_state:
+    st.session_state.current_label = None
+
+def generate_agent_html(states, topic):
+    icons = {
+        "Senior Researcher": '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>',
+        "Technical Copywriter & Synthesizer": '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>',
+        "Quality Assurance & Fact-Checker": '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>'
+    }
+    
+    html_parts = ['<div class="workflow-container">']
+    if topic:
+        html_parts.append(
+            '<div class="topic-header">'
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="4"></circle></svg>'
+            f' Topic: {topic}'
+            '</div>'
+        )
+        
+    for agent, state in states.items():
+        status = state["status"]
+        steps = state["steps"]
+        icon = icons.get(agent, icons["Senior Researcher"])
+        
+        html_parts.append('<div class="agent-card">')
+        html_parts.append('<div class="agent-header">')
+        html_parts.append(f'<div class="agent-icon-wrapper">{icon}</div>')
+        html_parts.append(f'<div class="agent-title">{agent}</div>')
+        html_parts.append(f'<div class="status-badge badge-{status}">{status}</div>')
+        html_parts.append('</div>')
+        html_parts.append('<ul class="agent-steps">')
+        
+        if not steps and status == "queued":
+            html_parts.append('<li>Waiting to start...</li>')
+        else:
+            for step in steps[-15:]:
+                html_parts.append(f'<li>{step}</li>')
+        
+        html_parts.append('</ul>')
+        html_parts.append('</div>')
+    
+    html_parts.append('</div>')
+    return "".join(html_parts)
+
+def parse_log_line(line, state):
+    updated = False
+    
+    for agent_name in state["agent_states"].keys():
+        if agent_name in line and ("Working Agent" in line or "Agent:" in line):
+            current = state["current_agent"]
+            if current and current in state["agent_states"]:
+                state["agent_states"][current]["status"] = "done"
+                
+            state["current_agent"] = agent_name
+            state["agent_states"][agent_name]["status"] = "running"
+            if "current_label" in state:
+                state["current_label"] = None
+            return True
+        
+    current = state["current_agent"]
+    if current and current in state["agent_states"]:
+        line_clean = line.strip()
+        
+        # Filter out rich formatting decorative borders
+        if "─" in line_clean or "╭" in line_clean or "╰" in line_clean or "✅" in line_clean or "🚀" in line_clean:
+            return False
+            
+        if not line_clean: return False
+        
+        patterns = {
+            r"Action:\s*(.*)": "Action",
+            r"Action Input:\s*(.*)": "Input",
+            r"Thought:\s*(.*)": "Thinking",
+            r"Observation:\s*(.*)": "Found",
+            r"Task [Oo]utput:\s*(.*)": "Status",
+            r"Final Answer:\s*(.*)": "Status",
+            r"I need to\s+(.*)": "Thinking"
+        }
+        
+        matched = False
+        for pattern, label in patterns.items():
+            match = re.search(pattern, line_clean, re.IGNORECASE)
+            if match:
+                content = match.group(1).strip()
+                if label == "Input":
+                    content = re.sub(r'[{}\'"]', '', content)
+                
+                if "current_label" in state:
+                    state["current_label"] = label
+                    
+                # We add a new step, even if content is empty (it will be filled by next lines)
+                if content and "do i need to use a tool" in content.lower():
+                    pass # Ignore internal tool monologue
+                else:
+                    state["agent_states"][current]["steps"].append(f"<b>{label}:</b> {content}")
+                    updated = True
+                matched = True
+                break
+                
+        if not matched and state.get("current_label"):
+            if "do i need to use a tool" not in line_clean.lower():
+                # Append to the last step since this is continuation of previous label
+                if len(state["agent_states"][current]["steps"]) > 0:
+                    last_step = state["agent_states"][current]["steps"][-1]
+                    if len(last_step) < 250:
+                        state["agent_states"][current]["steps"][-1] = last_step + " " + line_clean
+                    elif not last_step.endswith("..."):
+                        state["agent_states"][current]["steps"][-1] = last_step + "..."
+                    updated = True
+                
+    return updated
+
 
 tab_report, tab_raw, tab_logs = st.tabs(["📄 Final Checked Report", "📊 Researcher Raw Data", "🤖 Agent Thinking Process"])
 
 with tab_logs:
-    st.markdown('<div class="console-header">💻 Agent Console Logger</div>', unsafe_allow_html=True)
+    st.markdown('<div class="console-header">💻 Architected Interactive Agent Workflow</div>', unsafe_allow_html=True)
     log_area = st.empty()
-    log_area.code(st.session_state.live_logs or "Waiting for workflow to start...")
+    if st.session_state.live_logs:
+        log_area.markdown(generate_agent_html(st.session_state.agent_states, ""), unsafe_allow_html=True)
+    else:
+        log_area.markdown(generate_agent_html(init_agent_states(), ""), unsafe_allow_html=True)
 
 with tab_raw:
     if st.session_state.raw_research:
@@ -168,7 +319,11 @@ if start_btn:
         st.stop()
         
     st.session_state.live_logs = "Initializing CrewAI Agents...\n"
-    log_area.code(st.session_state.live_logs)
+    st.session_state.log_line_buffer = ""
+    st.session_state.agent_states = init_agent_states()
+    st.session_state.current_agent = None
+    
+    log_area.markdown(generate_agent_html(st.session_state.agent_states, research_topic), unsafe_allow_html=True)
     
     try:
         llm = LLM(
@@ -181,11 +336,8 @@ if start_btn:
         st.stop()
         
     tools, tools_log = setup_tools(serper_api_key)
-    st.session_state.live_logs += tools_log
-    log_area.code(st.session_state.live_logs)
-
+    
     result_container = {"raw": "", "final": "", "error": None}
-
     log_queue = queue.Queue()
 
     def run_crew_wrapper():
@@ -216,7 +368,18 @@ if start_btn:
             
             if new_logs:
                 st.session_state.live_logs += new_logs
-                log_area.code(st.session_state.live_logs)
+                st.session_state.log_line_buffer += new_logs
+                
+                lines = st.session_state.log_line_buffer.split('\n')
+                st.session_state.log_line_buffer = lines[-1]
+                
+                updated_ui = False
+                for line in lines[:-1]:
+                    if parse_log_line(line, st.session_state):
+                        updated_ui = True
+                        
+                if updated_ui:
+                    log_area.markdown(generate_agent_html(st.session_state.agent_states, research_topic), unsafe_allow_html=True)
                 
             time.sleep(0.5)
             
@@ -231,7 +394,17 @@ if start_btn:
             break
     if new_logs:
         st.session_state.live_logs += new_logs
-        log_area.code(st.session_state.live_logs)
+        st.session_state.log_line_buffer += new_logs
+        lines = st.session_state.log_line_buffer.split('\n')
+        st.session_state.log_line_buffer = ""
+        for line in lines:
+            parse_log_line(line, st.session_state)
+            
+    # Mark last agent as done
+    if st.session_state.current_agent and st.session_state.current_agent in st.session_state.agent_states:
+        st.session_state.agent_states[st.session_state.current_agent]["status"] = "done"
+        
+    log_area.markdown(generate_agent_html(st.session_state.agent_states, research_topic), unsafe_allow_html=True)
 
     if result_container.get("error"):
         st.error(f"Workflow failed: {result_container['error']}")
