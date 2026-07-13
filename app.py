@@ -49,15 +49,15 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
     html, body, [class*="css"] { font-family: 'Outfit', sans-serif; }
     .app-title {
-        background: linear-gradient(135deg, #FF4B4B 0%, #7E22CE 50%, #3B82F6 100%);
+        background: linear-gradient(135deg, #F8FAFC 0%, #94A3B8 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 800;
-        font-size: 3rem;
+        font-size: 2.5rem;
         margin-bottom: 0.2rem;
-        letter-spacing: -0.05rem;
+        letter-spacing: -0.02em;
     }
-    .app-subtitle { font-size: 1.15rem; color: #94A3B8; margin-bottom: 2rem; }
+    .app-subtitle { font-size: 1.05rem; color: #64748B; margin-bottom: 2rem; }
     .sidebar-header { font-weight: 700; font-size: 1.4rem; color: #F8FAFC; margin-bottom: 1rem; }
     .console-header { font-weight: 600; font-size: 1rem; color: #38BDF8; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
@@ -109,12 +109,103 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 2px 4px rgba(0,0,0,0.3);
     }
+
+    /* Landing Page Styling */
+    .landing-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        margin-top: 6vh;
+        text-align: center;
+        animation: fadeIn 0.8s ease-out;
+    }
+    .landing-title {
+        font-size: 4.5rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #F8FAFC 0%, #94A3B8 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
+        letter-spacing: -0.02em;
+    }
+    .landing-subtitle {
+        font-size: 1.15rem;
+        color: #94A3B8;
+        font-weight: 400;
+        margin-bottom: 3rem;
+        max-width: 650px;
+        line-height: 1.6;
+    }
+    
+    /* Hide top padding in Streamlit for landing page */
+    .block-container {
+        padding-top: 2rem !important;
+    }
+    
+    /* Clean Input Styling */
+    .stTextInput>div>div>input {
+        background-color: #18181B !important;
+        border: 1px solid #3F3F46 !important;
+        color: #F8FAFC !important;
+        border-radius: 12px !important;
+        padding: 16px 24px !important;
+        font-size: 1.1rem !important;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    .stTextInput>div>div>input:focus {
+        border-color: #38BDF8 !important;
+        box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2) !important;
+    }
+    
+    /* Minimalist Primary Button */
+    .stButton>button[kind="primary"] {
+        background-color: #F8FAFC !important;
+        color: #0F172A !important;
+        border-radius: 12px !important;
+        padding: 12px 24px !important;
+        font-weight: 600 !important;
+        font-size: 1.05rem !important;
+        border: none !important;
+        transition: all 0.2s ease !important;
+    }
+    .stButton>button[kind="primary"]:hover {
+        background-color: #E2E8F0 !important;
+        transform: translateY(-2px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Secondary Pill Buttons */
+    .stButton>button[kind="secondary"] {
+        background-color: #27272A !important;
+        color: #A1A1AA !important;
+        border: 1px solid #3F3F46 !important;
+        border-radius: 20px !important;
+        padding: 6px 16px !important;
+        font-size: 0.9rem !important;
+        transition: all 0.2s ease !important;
+    }
+    .stButton>button[kind="secondary"]:hover {
+        color: #F8FAFC !important;
+        border-color: #71717A !important;
+        background-color: #3F3F46 !important;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# App Headers
-st.markdown('<div class="app-title">🧬 ResnicAI</div>', unsafe_allow_html=True)
-st.markdown('<div class="app-subtitle">Multi-Agent Collaborative Research & Fact-Checked Reports powered by CrewAI</div>', unsafe_allow_html=True)
+# State Init
+if "has_started" not in st.session_state:
+    st.session_state.has_started = False
+if "research_topic" not in st.session_state:
+    st.session_state.research_topic = ""
+if "trigger_run" not in st.session_state:
+    st.session_state.trigger_run = False
 
 if IMPORT_ERROR:
     st.error(f"Failed to load required libraries. Please check your setup. Error: {IMPORT_ERROR}")
@@ -139,17 +230,63 @@ with st.sidebar:
     for k, agent_info in agent_prompts.items():
         st.markdown(f"**{agent_info['role']}** is Active")
 
-# Main Workspace Page
-col_left, col_right = st.columns([2, 1])
+# Main Page Routing
+if not st.session_state.has_started:
+    st.markdown('<div class="landing-wrapper">', unsafe_allow_html=True)
+    st.markdown('<div class="landing-title">ResnicAI</div>', unsafe_allow_html=True)
+    st.markdown('<div class="landing-subtitle">An intelligent multi-agent crew that conducts deep research and delivers heavily fact-checked, beautifully formatted insights.</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    _, col_main, _ = st.columns([1, 2, 1])
+    with col_main:
+        t_input = st.text_input(
+            "Topic", 
+            value=st.session_state.research_topic,
+            placeholder="What would you like to research? (e.g. Impact of Quantum Computing)",
+            label_visibility="collapsed"
+        )
+        
+        st.markdown('<div style="text-align: center; margin-top: 15px; color: #64748B; font-size: 0.9rem; margin-bottom: 10px;">Suggestions:</div>', unsafe_allow_html=True)
+        sc1, sc2, sc3 = st.columns(3)
+        if sc1.button("The Future of AI", use_container_width=True):
+            st.session_state.research_topic = "The Future of Artificial Intelligence"
+            st.session_state.has_started = True
+            st.session_state.trigger_run = True
+            st.rerun()
+        if sc2.button("Cybersecurity 2030", use_container_width=True):
+            st.session_state.research_topic = "Cybersecurity threats in 2030"
+            st.session_state.has_started = True
+            st.session_state.trigger_run = True
+            st.rerun()
+        if sc3.button("Climate Tech", use_container_width=True):
+            st.session_state.research_topic = "Climate Tech Innovations"
+            st.session_state.has_started = True
+            st.session_state.trigger_run = True
+            st.rerun()
 
+        st.markdown('<div style="margin-top: 25px;"></div>', unsafe_allow_html=True)
+        if st.button("Start Research", type="primary", use_container_width=True):
+            if t_input.strip():
+                st.session_state.research_topic = t_input.strip()
+                st.session_state.has_started = True
+                st.session_state.trigger_run = True
+                st.rerun()
+            else:
+                st.warning("Please enter a research topic to begin.")
+                
+    st.stop() # Hide the rest of the app on the landing page
+
+# Dashboard View
+st.markdown('<div class="app-title">ResnicAI</div>', unsafe_allow_html=True)
+st.markdown('<div class="app-subtitle">An intelligent multi-agent crew that conducts deep research and delivers heavily fact-checked, beautifully formatted insights.</div>', unsafe_allow_html=True)
+
+col_left, col_right = st.columns([2, 1])
 with col_left:
-    st.markdown("### 🔍 Start Your Research")
-    research_topic = st.text_input(
-        "What topic would you like the agents to research?",
-        placeholder="e.g., Impact of Quantum Computing on Cybersecurity in 2026",
-        help="Enter a clear research query."
-    )
-    start_btn = st.button("🚀 Trigger CrewAI Agent Workflow", use_container_width=True)
+    st.markdown(f"### 🔍 Researching: **{st.session_state.research_topic}**")
+    if st.button("← New Research", use_container_width=False):
+        st.session_state.has_started = False
+        st.session_state.research_topic = ""
+        st.rerun()
 
 # Setup Session State for outputs
 if "raw_research" not in st.session_state:
@@ -415,14 +552,18 @@ with tab_report:
         st.info("Trigger the workflow to view the synthesized report.")
 
 # Execution logic
-if start_btn:
+# Execution logic
+if st.session_state.trigger_run:
+    st.session_state.trigger_run = False
     if not gemini_api_key:
         st.error("`GEMINI_API_KEY` is missing in the environment. Please configure it in your `.env` file.")
         st.stop()
-    if not research_topic.strip():
+    if not st.session_state.research_topic.strip():
         st.error("Please enter a research topic.")
         st.stop()
         
+    research_topic = st.session_state.research_topic
+    
     st.session_state.live_logs = "Initializing CrewAI Agents...\n"
     st.session_state.log_line_buffer = ""
     st.session_state.agent_states = init_agent_states()
