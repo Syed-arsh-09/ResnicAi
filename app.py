@@ -211,20 +211,33 @@ def parse_log_line(line, state):
     if current and current in state["agent_states"]:
         line_clean = line.strip()
         
+        # Clean up CrewAI tracing prefixes (e.g. '| | ', '| ', etc)
+        line_clean = re.sub(r'^(\s*\|\s*)+', '', line_clean).strip()
+        line_clean = re.sub(r'^[│├─┌└┐┘]+\s*', '', line_clean).strip()
+        
         # Filter out rich formatting decorative borders
-        if "─" in line_clean or "╭" in line_clean or "╰" in line_clean or "✅" in line_clean or "🚀" in line_clean:
+        if not line_clean or set(line_clean).issubset(set("─╭╰│┌└┐┘ 🚀✅📋🤖🔧")):
             return False
             
-        if not line_clean: return False
-        
+        if "Agent Final Answer" in line_clean or "Final Answer:" in line_clean:
+            state["agent_states"][current]["steps"].append("Compiling output for handoff...")
+            state["current_label"] = "Status"
+            return True
+            
+        if "Tool Execution Completed" in line_clean:
+            state["agent_states"][current]["steps"].append("Analyzing gathered findings...")
+            state["current_label"] = "Found"
+            return True
+            
         patterns = {
-            r"Action:\s*(.*)": "Action",
-            r"Action Input:\s*(.*)": "Input",
-            r"Thought:\s*(.*)": "Thinking",
-            r"Observation:\s*(.*)": "Found",
-            r"Task [Oo]utput:\s*(.*)": "Status",
-            r"Final Answer:\s*(.*)": "Status",
-            r"I need to\s+(.*)": "Thinking"
+            r"^Task:\s*(.*)": "Thinking",
+            r"^Args:\s*(.*)": "Input",
+            r"^Tool:\s*(.*)": "Action",
+            # Legacy fallbacks
+            r"^Action:\s*(.*)": "Action",
+            r"^Action Input:\s*(.*)": "Input",
+            r"^Thought:\s*(.*)": "Thinking",
+            r"^Observation:\s*(.*)": "Found"
         }
         
         matched = False
@@ -232,31 +245,56 @@ def parse_log_line(line, state):
             match = re.search(pattern, line_clean, re.IGNORECASE)
             if match:
                 content = match.group(1).strip()
-                if label == "Input":
-                    content = re.sub(r'[{}\'"]', '', content)
                 
-                if "current_label" in state:
-                    state["current_label"] = label
+                # Prevent logging 'Tool:' twice (it appears in both Started and Completed boxes)
+                if label == "Action" and state.get("current_label") == "Found":
+                    break
                     
-                # We add a new step, even if content is empty (it will be filled by next lines)
+                if label == "Input":
+                    content = re.sub(r'[{}\'"\[\]]', '', content)
+                    content = re.sub(r'(?i)(search_query:|query:)\s*', '', content).strip()
+                
+                state["current_label"] = label
+                
                 if content and "do i need to use a tool" in content.lower():
                     pass # Ignore internal tool monologue
                 else:
-                    state["agent_states"][current]["steps"].append(f"<b>{label}:</b> {content}")
+                    if len(content) > 100:
+                        content = content[:97] + "..."
+                        
+                    if label == "Action":
+                        step_text = f"Initiating action: {content}"
+                    elif label == "Input":
+                        step_text = f"Searching: {content}"
+                    elif label == "Thinking":
+                        content = content[0].upper() + content[1:] if content else ""
+                        step_text = f"Reasoning: {content}"
+                    else:
+                        step_text = content
+                        
+                    state["agent_states"][current]["steps"].append(step_text)
                     updated = True
                 matched = True
                 break
                 
         if not matched and state.get("current_label"):
             if "do i need to use a tool" not in line_clean.lower():
-                # Append to the last step since this is continuation of previous label
-                if len(state["agent_states"][current]["steps"]) > 0:
-                    last_step = state["agent_states"][current]["steps"][-1]
-                    if len(last_step) < 250:
-                        state["agent_states"][current]["steps"][-1] = last_step + " " + line_clean
-                    elif not last_step.endswith("..."):
-                        state["agent_states"][current]["steps"][-1] = last_step + "..."
+                if line_clean.startswith('* ') or line_clean.startswith('- ') or line_clean.startswith('#'):
+                    # Strip the markdown character to match the clean UI design
+                    clean_bullet = re.sub(r'^[*#\-]\s*', '', line_clean)
+                    if len(clean_bullet) > 100:
+                        clean_bullet = clean_bullet[:97] + "..."
+                    state["agent_states"][current]["steps"].append(clean_bullet)
                     updated = True
+                elif len(state["agent_states"][current]["steps"]) > 0:
+                    # Append to the current step but keep it short
+                    last_step = state["agent_states"][current]["steps"][-1]
+                    if len(last_step) < 100 and not last_step.endswith("..."):
+                        new_step = last_step + " " + line_clean
+                        if len(new_step) > 100:
+                            new_step = new_step[:97] + "..."
+                        state["agent_states"][current]["steps"][-1] = new_step
+                        updated = True
                 
     return updated
 
@@ -352,6 +390,8 @@ if start_btn:
         clean_text = clean_ansi(text)
         if clean_text:
             log_queue.put(clean_text)
+            with open("crewai_raw_trace.log", "a", encoding="utf-8") as f:
+                f.write(clean_text)
 
     crew_thread = threading.Thread(target=run_crew_wrapper)
     set_log_callback(append_log)
