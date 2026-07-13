@@ -84,6 +84,31 @@ st.markdown("""
         70% { box-shadow: 0 0 0 6px rgba(56, 189, 248, 0); }
         100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
     }
+    
+    /* Citation styling */
+    a[title^="Source"] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #374151; 
+        color: #9CA3AF !important; 
+        border-radius: 50%;
+        width: 1.15rem;
+        height: 1.15rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-decoration: none !important;
+        margin: 0 4px;
+        vertical-align: super;
+        border: 1px solid #4B5563; 
+        transition: all 0.2s ease;
+    }
+    a[title^="Source"]:hover {
+        background-color: #4B5563;
+        color: #F9FAFB !important; 
+        transform: translateY(-2px);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -299,6 +324,48 @@ def parse_log_line(line, state):
     return updated
 
 
+def format_citations(text):
+    if not text:
+        return text
+    links = []
+    
+    def replacer(match):
+        is_markdown = match.group(2) is not None
+        
+        if is_markdown:
+            text_part = match.group(1)
+            url_part = match.group(2)
+        else:
+            text_part = ""
+            url_part = match.group(3)
+            
+        if url_part not in links:
+            links.append(url_part)
+        idx = links.index(url_part) + 1
+        
+        citation = f"[{idx}]({url_part} \"Source: {url_part}\")"
+        
+        if not is_markdown:
+            return citation
+            
+        tp_clean = text_part.lower().strip()
+        # If the text was just a number, 'source', or the URL itself, replace it entirely with the bubble
+        if tp_clean.startswith('http') or tp_clean.startswith('source') or tp_clean.isdigit() or tp_clean == f"[{idx}]":
+            return citation
+        else:
+            return f"{text_part} {citation}"
+            
+    # Single pass regex for both Markdown links and bare URLs
+    # Group 1: text part of markdown link
+    # Group 2: URL part of markdown link
+    # Group 3: bare URL (negative lookbehind ensures it's not immediately preceded by '(' or '"')
+    pattern = r'\[(.*?)\]\((https?://[^\s\)]+)\)|(?<![("])(https?://[a-zA-Z0-9./?=_%&+-]+)'
+    
+    text = re.sub(pattern, replacer, text)
+            
+    return text
+
+
 tab_report, tab_raw, tab_logs = st.tabs(["📄 Final Checked Report", "📊 Researcher Raw Data", "🤖 Agent Thinking Process"])
 
 with tab_logs:
@@ -450,7 +517,7 @@ if start_btn:
         st.error(f"Workflow failed: {result_container['error']}")
     else:
         st.session_state.raw_research = result_container["raw"]
-        st.session_state.final_report = result_container["final"]
+        st.session_state.final_report = format_citations(result_container["final"])
         st.success("ResnicAI workflow completed successfully!")
     
     st.rerun()
