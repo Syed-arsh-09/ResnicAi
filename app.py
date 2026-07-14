@@ -60,10 +60,50 @@ st.markdown("""
     .app-subtitle { font-size: 1.05rem; color: #64748B; margin-bottom: 2rem; }
     .sidebar-header { font-weight: 700; font-size: 1.4rem; color: #F8FAFC; margin-bottom: 1rem; }
     .console-header { font-weight: 600; font-size: 1rem; color: #38BDF8; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] { background-color: transparent; border-radius: 4px 4px 0px 0px; padding: 10px 16px; font-weight: 600; color: #94A3B8; transition: all 0.2s; }
-    .stTabs [data-baseweb="tab"]:hover { color: #F8FAFC; background-color: rgba(255, 255, 255, 0.03); }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] { color: #38BDF8; border-bottom-color: #38BDF8; }
+    div[data-testid="stTabs"] {
+        padding-top: 0.5rem;
+    }
+    div[data-testid="stTabs"] > div {
+        width: 100% !important;
+    }
+    div[data-testid="stTabs"] [role="tablist"] { 
+        display: flex !important;
+        justify-content: space-between !important;
+        gap: 16px; 
+        background-color: rgba(255, 255, 255, 0.03) !important;
+        padding: 8px 24px !important;
+        border-radius: 16px !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+        align-items: center;
+        width: 100% !important;
+    }
+    div[data-testid="stTabs"] button[role="tab"] { 
+        flex: 1 !important;
+        display: flex !important;
+        justify-content: center !important;
+        background-color: transparent !important; 
+        border-radius: 10px !important; 
+        padding: 10px 20px !important; 
+        font-weight: 600 !important; 
+        color: #94A3B8 !important; 
+        transition: all 0.2s ease !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    div[data-testid="stTabs"] button[role="tab"]:hover { 
+        color: #F8FAFC !important; 
+        background-color: rgba(255, 255, 255, 0.05) !important; 
+    }
+    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] { 
+        color: #0F172A !important; 
+        background-color: #F8FAFC !important; 
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+    }
+    /* Hide the animated bottom indicator in new Streamlit versions */
+    div[data-testid="stTabIndicator"] {
+        display: none !important;
+    }
     
     /* New Custom UI for Agent Workflow */
     .workflow-container { display: flex; flex-direction: column; gap: 16px; margin-top: 10px; }
@@ -138,9 +178,10 @@ st.markdown("""
         line-height: 1.6;
     }
     
-    /* Hide top padding in Streamlit for landing page */
+    /* Hide top padding in Streamlit for landing page and add global fade-in */
     .block-container {
         padding-top: 2rem !important;
+        animation: fadeIn 0.6s ease-out forwards;
     }
     
     /* Clean Input Styling */
@@ -231,62 +272,73 @@ with st.sidebar:
         st.markdown(f"**{agent_info['role']}** is Active")
 
 # Main Page Routing
+landing_placeholder = st.empty()
 if not st.session_state.has_started:
-    st.markdown('<div class="landing-wrapper">', unsafe_allow_html=True)
-    st.markdown('<div class="landing-title">ResnicAI</div>', unsafe_allow_html=True)
-    st.markdown('<div class="landing-subtitle">An intelligent multi-agent crew that conducts deep research and delivers heavily fact-checked, beautifully formatted insights.</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    _, col_main, _ = st.columns([1, 2, 1])
-    with col_main:
-        t_input = st.text_input(
-            "Topic", 
-            value=st.session_state.research_topic,
-            placeholder="What would you like to research? (e.g. Impact of Quantum Computing)",
-            label_visibility="collapsed"
-        )
+    with landing_placeholder.container():
+        st.markdown('<div class="landing-wrapper">', unsafe_allow_html=True)
+        st.markdown('<div class="landing-title">ResnicAI</div>', unsafe_allow_html=True)
+        st.markdown('<div class="landing-subtitle">An intelligent multi-agent crew that conducts deep research and delivers heavily fact-checked, beautifully formatted insights.</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
         
-        st.markdown('<div style="text-align: center; margin-top: 15px; color: #64748B; font-size: 0.9rem; margin-bottom: 10px;">Suggestions:</div>', unsafe_allow_html=True)
-        sc1, sc2, sc3 = st.columns(3)
-        if sc1.button("The Future of AI", use_container_width=True):
-            st.session_state.research_topic = "The Future of Artificial Intelligence"
-            st.session_state.has_started = True
-            st.session_state.trigger_run = True
-            st.rerun()
-        if sc2.button("Cybersecurity 2030", use_container_width=True):
-            st.session_state.research_topic = "Cybersecurity threats in 2030"
-            st.session_state.has_started = True
-            st.session_state.trigger_run = True
-            st.rerun()
-        if sc3.button("Climate Tech", use_container_width=True):
-            st.session_state.research_topic = "Climate Tech Innovations"
-            st.session_state.has_started = True
-            st.session_state.trigger_run = True
-            st.rerun()
-
-        st.markdown('<div style="margin-top: 25px;"></div>', unsafe_allow_html=True)
-        if st.button("Start Research", type="primary", use_container_width=True):
-            if t_input.strip():
-                st.session_state.research_topic = t_input.strip()
+        _, col_main, _ = st.columns([1, 2, 1])
+        with col_main:
+            t_input = st.text_input(
+                "Topic", 
+                value=st.session_state.research_topic,
+                placeholder="What would you like to research? (e.g. Impact of Quantum Computing)",
+                label_visibility="collapsed"
+            )
+            
+            st.markdown('<div style="text-align: center; margin-top: 15px; color: #64748B; font-size: 0.9rem; margin-bottom: 10px;">Suggestions:</div>', unsafe_allow_html=True)
+            sc1, sc2, sc3 = st.columns(3)
+            if sc1.button("The Future of AI", use_container_width=True):
+                st.session_state.research_topic = "The Future of Artificial Intelligence"
                 st.session_state.has_started = True
                 st.session_state.trigger_run = True
                 st.rerun()
-            else:
-                st.warning("Please enter a research topic to begin.")
-                
-    st.stop() # Hide the rest of the app on the landing page
+            if sc2.button("Cybersecurity 2030", use_container_width=True):
+                st.session_state.research_topic = "Cybersecurity threats in 2030"
+                st.session_state.has_started = True
+                st.session_state.trigger_run = True
+                st.rerun()
+            if sc3.button("Climate Tech", use_container_width=True):
+                st.session_state.research_topic = "Climate Tech Innovations"
+                st.session_state.has_started = True
+                st.session_state.trigger_run = True
+                st.rerun()
+
+            st.markdown('<div style="margin-top: 25px;"></div>', unsafe_allow_html=True)
+            if st.button("Start Research", type="primary", use_container_width=True):
+                if t_input.strip():
+                    st.session_state.research_topic = t_input.strip()
+                    st.session_state.has_started = True
+                    st.session_state.trigger_run = True
+                    st.rerun()
+                else:
+                    st.warning("Please enter a research topic to begin.")
+                    
+        st.stop() # Hide the rest of the app on the landing page
+else:
+    landing_placeholder.empty()
 
 # Dashboard View
-st.markdown('<div class="app-title">ResnicAI</div>', unsafe_allow_html=True)
-st.markdown('<div class="app-subtitle">An intelligent multi-agent crew that conducts deep research and delivers heavily fact-checked, beautifully formatted insights.</div>', unsafe_allow_html=True)
+st.markdown('<div style="margin-bottom: 1rem;"></div>', unsafe_allow_html=True)
 
-col_left, col_right = st.columns([2, 1])
-with col_left:
-    st.markdown(f"### 🔍 Researching: **{st.session_state.research_topic}**")
-    if st.button("← New Research", use_container_width=False):
+head_col1, head_col2 = st.columns([3, 1], vertical_alignment="center")
+with head_col1:
+    st.markdown(f"""
+        <div style="display: flex; align-items: center; gap: 12px; background: rgba(255, 255, 255, 0.03); padding: 12px 20px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <div style="background: linear-gradient(135deg, #38BDF8 0%, #0284C7 100%); width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);">🔍</div>
+            <h2 style="margin: 0; padding: 0; font-size: 1.4rem; font-weight: 600; color: #E2E8F0; letter-spacing: -0.01em;">Researching: <span style="color: #38BDF8; font-weight: 700;">{st.session_state.research_topic}</span></h2>
+        </div>
+    """, unsafe_allow_html=True)
+with head_col2:
+    if st.button("← New Research", use_container_width=True):
         st.session_state.has_started = False
         st.session_state.research_topic = ""
         st.rerun()
+
+st.markdown('<div style="margin-bottom: 1.5rem;"></div>', unsafe_allow_html=True)
 
 # Setup Session State for outputs
 if "raw_research" not in st.session_state:
